@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MarketAI">
+<title>MarketAI 股市儀表板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#080b12;--s1:#0d1018;--s2:#121620;--b1:#1e2436;--b2:#252d42;
+  --green:#00e5a0;--blue:#4f8ef7;--red:#f24b6b;--gold:#f5b93f;--purple:#a78bfa;
+  --t1:#e8edf8;--t2:#8a94b0;--t3:#454f6b;--r:13px;--r2:9px;
+}
+body{background:var(--bg);color:var(--t1);font-family:'Outfit',sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+::-webkit-scrollbar{width:3px;height:3px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--b1);border-radius:3px;}
+.app{max-width:430px;margin:0 auto;padding-bottom:84px;min-height:100vh;}
+
+/* Header */
+.hdr{padding:20px 16px 10px;display:flex;align-items:flex-start;justify-content:space-between;position:sticky;top:0;z-index:60;background:linear-gradient(to bottom,var(--bg) 80%,transparent);}
+.logo{font-size:21px;font-weight:900;letter-spacing:-1px;}
+.logo em{color:var(--green);font-style:normal;}
+.logo-sub{font-size:10px;color:var(--t3);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;display:flex;align-items:center;gap:5px;}
+.live{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 2s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
+.hdr-right{text-align:right;}
+.hdr-time{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;letter-spacing:-1px;}
+.hdr-date{font-size:10px;color:var(--t3);margin-top:2px;}
+
+/* Tabs */
+.tabs{display:flex;gap:5px;padding:6px 16px 12px;overflow-x:auto;scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{flex-shrink:0;padding:7px 14px;border-radius:100px;font-size:11px;font-weight:700;letter-spacing:.3px;cursor:pointer;border:1.5px solid var(--b1);background:transparent;color:var(--t3);font-family:'Outfit',sans-serif;transition:all .18s;white-space:nowrap;}
+.tab.on{background:var(--green);color:var(--bg);border-color:var(--green);}
+
+/* Section label */
+.sl{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--t3);padding:0 16px 7px;margin-top:14px;}
+
+/* Market grid */
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:0 16px 6px;}
+.mc{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:13px;position:relative;overflow:hidden;}
+.mc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--stripe,var(--b1));}
+.mc-lbl{font-size:9px;color:var(--t3);letter-spacing:1px;text-transform:uppercase;}
+.mc-name{font-size:12px;font-weight:600;color:var(--t2);margin:3px 0 8px;}
+.mc-price{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:600;}
+.mc-chg{font-family:'IBM Plex Mono',monospace;font-size:11px;margin-top:2px;}
+
+/* Metric cards */
+.metric-row{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:0 16px 6px;}
+.metric-card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:13px;display:flex;flex-direction:column;gap:3px;}
+.met-lbl{font-size:9px;color:var(--t3);letter-spacing:1px;text-transform:uppercase;}
+.met-val{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:600;line-height:1;}
+.met-label{font-size:11px;font-weight:700;margin-top:2px;}
+.met-desc{font-size:10px;color:var(--t3);margin-top:2px;line-height:1.4;}
+
+/* Sentiment bar */
+.sbwrap{margin:0 16px 7px;background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:12px 14px;}
+.sb-lbl{font-size:10px;color:var(--t2);font-weight:600;margin-bottom:7px;}
+.sb-track{height:7px;background:var(--b1);border-radius:100px;overflow:hidden;display:flex;}
+.sb-fill{height:100%;transition:width 1s ease;}
+.sb-nums{display:flex;justify-content:space-between;margin-top:5px;font-family:'IBM Plex Mono',monospace;font-size:10px;}
+
+/* Stock cards */
+.scard{margin:0 16px 7px;background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:12px 15px;display:flex;align-items:center;justify-content:space-between;}
+.scard.hot{border-color:rgba(0,229,160,.2);background:rgba(0,229,160,.025);}
+.sc-sym{font-size:15px;font-weight:800;letter-spacing:-.3px;}
+.sc-name{font-size:11px;color:var(--t3);margin-top:1px;}
+.sc-tags{display:flex;gap:3px;margin-top:5px;flex-wrap:wrap;}
+.sc-tag{font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:rgba(255,255,255,.05);color:var(--t3);}
+.sc-tag.ai{background:rgba(0,229,160,.1);color:var(--green);}
+.sc-tag.hot{background:rgba(245,185,63,.1);color:var(--gold);}
+.sc-tag.watch{background:rgba(79,142,247,.1);color:var(--blue);}
+.sc-tag.tw{background:rgba(167,139,250,.1);color:var(--purple);}
+.sc-right{text-align:right;}
+.sc-price{font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:600;}
+.sc-chg{font-family:'IBM Plex Mono',monospace;font-size:11px;margin-top:2px;}
+.sc-note{font-size:10px;color:var(--t3);margin-top:3px;max-width:130px;line-height:1.4;}
+
+/* Prev cards */
+.pcard{margin:0 16px 7px;background:rgba(255,255,255,.02);border:1px dashed var(--b1);border-radius:var(--r);padding:11px 14px;display:flex;align-items:center;justify-content:space-between;}
+.pc-sym{font-size:14px;font-weight:800;}
+.pc-name{font-size:10px;color:var(--t3);margin-top:1px;}
+.pc-outcome{font-size:10px;margin-top:4px;}
+.pc-right{text-align:right;}
+.pc-chg{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;}
+.pc-note{font-size:10px;color:var(--t3);margin-top:2px;max-width:120px;line-height:1.4;}
+
+/* News */
+.ncard{margin:0 16px 7px;background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:12px 14px;}
+.n-meta{display:flex;align-items:center;gap:5px;margin-bottom:5px;}
+.n-src{font-size:9px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;}
+.n-dot{width:2px;height:2px;border-radius:50%;background:var(--b2);}
+.n-time{font-size:9px;color:var(--t3);}
+.n-sent{font-size:8px;font-weight:700;padding:2px 5px;border-radius:3px;margin-left:auto;}
+.n-sent.bull{background:rgba(0,229,160,.1);color:var(--green);}
+.n-sent.bear{background:rgba(242,75,107,.1);color:var(--red);}
+.n-sent.neutral{background:rgba(255,255,255,.05);color:var(--t3);}
+.n-impact{display:inline-block;font-size:8px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:1px 5px;border-radius:3px;margin-left:5px;background:rgba(245,185,63,.1);color:var(--gold);}
+.n-title{font-size:13px;font-weight:600;line-height:1.5;}
+.n-sum{font-size:11px;color:var(--t3);margin-top:4px;line-height:1.5;}
+.n-link{display:inline-flex;align-items:center;gap:4px;margin-top:7px;font-size:10px;font-weight:600;color:var(--blue);text-decoration:none;padding:4px 9px;border-radius:100px;border:1px solid rgba(79,142,247,.25);}
+
+/* AI picks */
+.mkt-toggle{display:flex;gap:5px;padding:0 16px 12px;}
+.mkt-btn{flex:1;padding:9px;border-radius:var(--r2);border:1.5px solid var(--b1);background:transparent;color:var(--t3);font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .18s;}
+.mkt-btn.on-us{background:rgba(79,142,247,.12);border-color:rgba(79,142,247,.4);color:var(--blue);}
+.mkt-btn.on-tw{background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.4);color:var(--purple);}
+.ai-section{margin:0 16px 8px;}
+.ai-sec-hdr{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--r) var(--r) 0 0;border:1px solid var(--b1);border-bottom:none;}
+.ai-sec-icon{font-size:16px;}
+.ai-sec-title{font-size:12px;font-weight:800;}
+.ai-sec-badge{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:100px;margin-left:auto;}
+.ai-picks{border:1px solid var(--b1);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:hidden;}
+.ai-pick{padding:12px 14px;border-bottom:1px solid var(--b1);display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:start;}
+.ai-pick:last-child{border-bottom:none;}
+.pick-num{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;}
+.pick-sym{font-size:14px;font-weight:800;}
+.pick-name{font-size:11px;color:var(--t2);}
+.pick-reason{font-size:12px;color:var(--t1);margin-top:6px;line-height:1.6;}
+.pick-sub{font-size:11px;color:var(--t2);margin-top:4px;line-height:1.5;}
+.pick-chips{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;}
+.pick-chip{font-size:9px;font-weight:700;padding:2px 7px;border-radius:100px;}
+.pick-risk{font-size:9px;color:var(--red);margin-top:2px;}
+
+.short-hdr{background:rgba(245,185,63,.05);}
+.short-badge{background:rgba(245,185,63,.15);color:var(--gold);}
+.short-num{background:rgba(245,185,63,.15);color:var(--gold);}
+.short-chip{background:rgba(245,185,63,.1);color:var(--gold);}
+.long-hdr{background:rgba(0,229,160,.05);}
+.long-badge{background:rgba(0,229,160,.12);color:var(--green);}
+.long-num{background:rgba(0,229,160,.12);color:var(--green);}
+.long-chip{background:rgba(0,229,160,.08);color:var(--green);}
+.exit-hdr{background:rgba(242,75,107,.05);}
+.exit-badge{background:rgba(242,75,107,.12);color:var(--red);}
+.exit-num{background:rgba(242,75,107,.12);color:var(--red);}
+.exit-chip{background:rgba(242,75,107,.08);color:var(--red);}
+
+/* Buttons */
+.rbtn{display:flex;align-items:center;justify-content:center;gap:7px;margin:0 16px 8px;padding:11px;width:calc(100% - 32px);background:var(--s1);border:1.5px solid var(--b1);border-radius:var(--r);color:var(--t3);font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .2s;}
+.rbtn:hover{border-color:var(--green);color:var(--green);}
+.rbtn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* Misc */
+.err-box{margin:0 16px 8px;padding:11px 13px;background:rgba(242,75,107,.07);border:1px solid rgba(242,75,107,.2);border-radius:var(--r);font-size:12px;color:var(--red);line-height:1.5;}
+.info-box{margin:0 16px 8px;padding:10px 13px;background:rgba(0,229,160,.05);border:1px solid rgba(0,229,160,.15);border-radius:var(--r);font-size:11px;color:var(--t2);line-height:1.6;}
+.skel{margin:0 16px 7px;border-radius:var(--r);background:var(--s1);border:1px solid var(--b1);overflow:hidden;position:relative;}
+.skel::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.04),transparent);animation:shimmer 1.6s ease-in-out infinite;}
+@keyframes shimmer{0%{transform:translateX(-100%);}100%{transform:translateX(100%);}}
+.div{height:1px;background:var(--b1);margin:6px 16px 12px;}
+.ai-sum{margin:0 16px 10px;padding:10px 14px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);font-size:13px;font-weight:600;line-height:1.5;}
+.ai-disc{margin:0 16px 8px;padding:10px 13px;background:rgba(255,255,255,.03);border:1px solid var(--b1);border-radius:var(--r);font-size:10px;color:var(--t3);line-height:1.6;}
+.ai-loading{margin:16px;text-align:center;color:var(--t3);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 1.2s ease-in-out infinite;}
+.dot:nth-child(2){animation-delay:.2s;}.dot:nth-child(3){animation-delay:.4s;}
+@keyframes pulse{0%,100%{opacity:.2;transform:scale(.7);}50%{opacity:1;transform:scale(1.2);}}
+.spin{display:inline-block;animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.pos{color:var(--green);}
+.neg{color:var(--red);}
+.neu{color:var(--t2);}
+
+/* Bottom nav */
+.bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:rgba(12,14,22,.96);border-top:1px solid var(--b1);display:flex;padding:8px 0 20px;backdrop-filter:blur(20px);z-index:70;}
+.nb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:8px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--t3);cursor:pointer;background:none;border:none;font-family:'Outfit',sans-serif;padding:0;}
+.nb.on{color:var(--green);}
+.nb-i{font-size:17px;}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <!-- Header -->
+  <div class="hdr">
+    <div>
+      <div class="logo">Market<em>AI</em></div>
+      <div class="logo-sub"><span class="live"></span><span id="status-txt">連線中...</span></div>
+    </div>
+    <div class="hdr-right">
+      <div class="hdr-time mono" id="clock">--:--</div>
+      <div class="hdr-date" id="dateTxt"></div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab on" onclick="switchTab('overview')">📊 大盤</button>
+    <button class="tab" onclick="switchTab('watchlist')">⭐ 追蹤股</button>
+    <button class="tab" onclick="switchTab('ai')">🤖 AI選股</button>
+    <button class="tab" onclick="switchTab('news')">📰 新聞</button>
+  </div>
+
+  <!-- Error -->
+  <div id="err-box" style="display:none" class="err-box"></div>
+
+  <!-- Pages -->
+  <div id="page-overview"></div>
+  <div id="page-watchlist" style="display:none"></div>
+  <div id="page-ai" style="display:none"></div>
+  <div id="page-news" style="display:none"></div>
+
+  <!-- Bottom nav -->
+  <div class="bnav">
+    <button class="nb on" onclick="switchTab('overview')"><span class="nb-i">📊</span>大盤</button>
+    <button class="nb" onclick="switchTab('watchlist')"><span class="nb-i">⭐</span>追蹤股</button>
+    <button class="nb" onclick="switchTab('ai')"><span class="nb-i">🤖</span>AI選股</button>
+    <button class="nb" onclick="switchTab('news')"><span class="nb-i">📰</span>新聞</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  設定
+// ═══════════════════════════════════════════
+const GAS_URL = "https://script.google.com/macros/s/AKfycbydXjk3L1xb9_kV8-Ew3NpJzficeuyRrw-j1P4AKaZsDLZCAbtfYVgH7bTXN96p6PsE/exec";
+const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
+
+const US_META = {
+  NVDA:  { tags:["AI","HOT"],   reason:"AI GPU 龍頭，Blackwell 出貨強勁" },
+  TSLA:  { tags:["WATCH"],      reason:"監控歐洲銷量與自駕政策動向" },
+  MSFT:  { tags:["AI"],         reason:"Azure AI 雲端高速成長" },
+  META:  { tags:["AI","WATCH"], reason:"Llama 系列帶動廣告主信心" },
+  AAPL:  { tags:["WATCH"],      reason:"iPhone 17 供應鏈動向追蹤" },
+  AMD:   { tags:["AI"],         reason:"AI GPU 市占挑戰者" },
+  GOOGL: { tags:["AI"],         reason:"I/O 大會後 AI 產品更新" },
+  AMZN:  { tags:["WATCH"],      reason:"AWS 雲端季報持續追蹤" },
+  SMCI:  { tags:["AI","HOT"],   reason:"AI 伺服器機殼供應商" },
+  PLTR:  { tags:["AI"],         reason:"政府 AI 合約持續擴大" },
+};
+const TW_META = {
+  "2330":{ tags:["AI","HOT","TW"], reason:"CoWoS 先進封裝訂單滿載" },
+  "2317":{ tags:["HOT","TW"],      reason:"AI Server 機殼訂單成長" },
+  "2454":{ tags:["AI","TW"],       reason:"AI 晶片設計能量受關注" },
+  "2382":{ tags:["TW"],            reason:"散熱需求隨 AI 伺服器成長" },
+  "3711":{ tags:["AI","TW"],       reason:"AI Edge 應用布局追蹤" },
+  "2308":{ tags:["TW","WATCH"],    reason:"電源供應 AI Server 受惠" },
+  "2412":{ tags:["TW"],            reason:"電信基礎建設穩定配息" },
+  "2303":{ tags:["TW","WATCH"],    reason:"晶圓代工受惠 AI 需求" },
+};
+const PREV_SAMPLE = [
+  { symbol:"AAPL",  name:"Apple Inc",      result:"+1.89%", raw:1.89,  note:"iPhone 17 備貨消息帶動" },
+  { symbol:"AMD",   name:"Advanced Micro", result:"-0.73%", raw:-0.73, note:"AI GPU 市占壓力" },
+  { symbol:"2317",  name:"鴻海",           result:"+3.42%", raw:3.42,  note:"AI Server 機殼訂單成長" },
+  { symbol:"GOOGL", name:"Alphabet",       result:"+0.55%", raw:0.55,  note:"I/O 大會新品帶動情緒" },
+];
+
+// ═══════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════
+let state = {
+  tab: "overview",
+  mkt: "US",
+  data: null,
+  loading: false,
+  aiUS: null, aiTW: null,
+  aiLoadUS: false, aiLoadTW: false,
+  aiDoneUS: false, aiDoneTW: false,
+};
+
+// ═══════════════════════════════════════════
+//  Helpers
+// ═══════════════════════════════════════════
+const clr = r => r > 0 ? "pos" : r < 0 ? "neg" : "neu";
+const stripe = r => r > 0 ? "var(--green)" : r < 0 ? "var(--red)" : "var(--b1)";
+const pct = (v, plus=true) => v == null ? "--" : (plus && v > 0 ? "+" : "") + Number(v).toFixed(2) + "%";
+const timeAgo = ts => {
+  if (!ts) return "";
+  const m = Math.floor((Date.now()/1000 - ts) / 60);
+  if (m < 1) return "剛剛";
+  if (m < 60) return m + "分前";
+  if (m < 1440) return Math.floor(m/60) + "小時前";
+  return Math.floor(m/1440) + "天前";
+};
+const tagCls = t => {
+  const v = t.toLowerCase();
+  return v==="ai"?"ai":v==="hot"?"hot":v==="watch"?"watch":v==="tw"?"tw":"";
+};
+const esc = s => (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+// Clock
+function updateClock() {
+  const now = new Date();
+  const days = ["日","一","二","三","四","五","六"];
+  document.getElementById("clock").textContent =
+    String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0");
+  document.getElementById("dateTxt").textContent =
+    (now.getMonth()+1) + "/" + now.getDate() + " 週" + days[now.getDay()];
+}
+updateClock();
+setInterval(updateClock, 30000);
+
+// Tab switching
+function switchTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll(".tab").forEach((el,i) => {
+    el.classList.toggle("on", ["overview","watchlist","ai","news"][i] === tab);
+  });
+  document.querySelectorAll(".nb").forEach((el,i) => {
+    el.classList.toggle("on", ["overview","watchlist","ai","news"][i] === tab);
+  });
+  ["overview","watchlist","ai","news"].forEach(t => {
+    document.getElementById("page-"+t).style.display = t===tab ? "" : "none";
+  });
+  if (tab === "ai") renderAI();
+}
+
+// Error display
+function showErr(msg) {
+  const el = document.getElementById("err-box");
+  if (msg) { el.textContent = "⚠️ " + msg; el.style.display = ""; }
+  else { el.style.display = "none"; }
+}
+
+// ═══════════════════════════════════════════
+//  JSONP Fetch (bypasses CORS on GAS redirect)
+// ═══════════════════════════════════════════
+function fetchJSONP(url) {
+  return new Promise((resolve, reject) => {
+    const cb = "cb_" + Math.random().toString(36).slice(2);
+    const script = document.createElement("script");
+    const timer = setTimeout(() => {
+      cleanup(); reject(new Error("Timeout"));
+    }, 25000);
+    function cleanup() {
+      delete window[cb];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      clearTimeout(timer);
+    }
+    window[cb] = data => { cleanup(); resolve(data); };
+    script.onerror = () => { cleanup(); reject(new Error("載入失敗，請確認 GAS 已部署")); };
+    script.src = url + (url.includes("?") ? "&" : "?") + "callback=" + cb;
+    document.head.appendChild(script);
+  });
+}
+
+// ═══════════════════════════════════════════
+//  Fetch market data
+// ═══════════════════════════════════════════
+async function fetchData() {
+  if (state.loading) return;
+  state.loading = true;
+  document.getElementById("status-txt").textContent = "更新中...";
+  showErr("");
+  renderSkeletons();
+  try {
+    const json = await fetchJSONP(GAS_URL + "?action=all");
+    if (json.error) throw new Error(json.error);
+    state.data = json;
+    const now = new Date();
+    document.getElementById("status-txt").textContent =
+      String(now.getHours()).padStart(2,"0") + ":" + String(now.getMinutes()).padStart(2,"0") + " 更新";
+    renderAll();
+  } catch(e) {
+    showErr(e.message);
+    document.getElementById("status-txt").textContent = "連線失敗";
+    renderAll(); // show fallback
+  } finally {
+    state.loading = false;
+  }
+}
+
+// Auto refresh every 5 min
+setInterval(fetchData, 300000);
+
+// ═══════════════════════════════════════════
+//  Render helpers
+// ═══════════════════════════════════════════
+function skel(h) { return `<div class="skel" style="height:${h}px"></div>`; }
+
+function renderSkeletons() {
+  document.getElementById("page-overview").innerHTML =
+    `<div class="sl">🇺🇸 美股指數</div><div class="mgrid">${skel(92)+skel(92)+skel(92)+skel(92)}</div>` +
+    `<div class="sl">🇹🇼 台股 & 匯率</div><div class="mgrid">${skel(92)+skel(92)}</div>`;
+}
+
+function mcCard(lbl, name, price, chgPct, raw) {
+  return `<div class="mc" style="--stripe:${stripe(raw)}">
+    <div class="mc-lbl">${esc(lbl)}</div>
+    <div class="mc-name">${esc(name)}</div>
+    <div class="mc-price mono ${clr(raw)}">${esc(price)}</div>
+    <div class="mc-chg mono ${clr(raw)}">${raw > 0 ? "+" : ""}${chgPct}%</div>
+  </div>`;
+}
+
+function renderOverview() {
+  const d = state.data;
+  const mkts = d?.markets || {};
+  const vix  = d?.vix || {};
+  const fg   = d?.fg  || {};
+  const news = d?.news || [];
+
+  // US markets
+  const usFallback = [
+    {k:"SPY",n:"S&P 500 ETF",p:"530.8",c:0.48}, {k:"QQQ",n:"NASDAQ ETF",p:"458.7",c:0.72},
+    {k:"DIA",n:"Dow Jones",p:"399.1",c:0.19},    {k:"IWM",n:"Russell 2000",p:"199.4",c:-0.31}
+  ];
+  const usCards = Object.keys(mkts.us||{}).length
+    ? Object.values(mkts.us).map(m => mcCard("美股", m.name, m.price, m.changePercent, m.raw)).join("")
+    : usFallback.map(m => mcCard("美股", m.n, m.p, m.c, m.c)).join("");
+
+  // TW markets
+  const twArr = [mkts.tw?.TWII, mkts.fx?.USDTWD].filter(Boolean);
+  const twFallback = [{symbol:"TWII",name:"加權指數",price:"21,847",changePercent:"1.12",raw:1.12,lbl:"台股"},{symbol:"USDTWD",name:"USD/TWD",price:"32.14",changePercent:"0",raw:0,lbl:"匯率"}];
+  const twCards = twArr.length
+    ? twArr.map(m => mcCard(m.symbol==="USDTWD"?"匯率":"台股", m.name, m.price, m.changePercent, m.raw)).join("")
+    : twFallback.map(m => mcCard(m.lbl, m.name, m.price, m.changePercent, m.raw)).join("");
+
+  // VIX
+  const vixColor = vix.level?.color || "var(--t2)";
+  const vixHtml = `<div class="metric-card">
+    <div class="met-lbl">VIX 恐慌指數</div>
+    <div class="met-val mono" style="color:${vixColor}">${vix.price||"--"}</div>
+    <div class="met-label" style="color:${vixColor}">${vix.level?.label||"--"}</div>
+    <div class="met-desc">${esc(vix.level?.desc||"數據載入中")}</div>
+  </div>`;
+
+  // FG
+  const fgColor = fg.color || "var(--t2)";
+  const fgHtml = `<div class="metric-card">
+    <div class="met-lbl">恐懼貪婪指數</div>
+    <div class="met-val mono" style="color:${fgColor}">${fg.value!=null?fg.value:"--"}</div>
+    <div class="met-label" style="color:${fgColor}">${fg.label||"--"}</div>
+    <div class="met-desc">${fg.source?"來源："+esc(fg.source):"數據載入中"}${fg.prevClose?"　前收："+Math.round(fg.prevClose):""}</div>
+  </div>`;
+
+  // Sentiment bar
+  const total = news.length || 8;
+  const bull  = Math.round(news.filter(n=>n.sentiment==="bull").length / total * 100) || 38;
+  const bear  = Math.round(news.filter(n=>n.sentiment==="bear").length / total * 100) || 24;
+  const neut  = 100 - bull - bear;
+  const sbHtml = `<div class="sbwrap">
+    <div class="sb-lbl">新聞情緒分佈（${news.length||0} 則）</div>
+    <div class="sb-track">
+      <div class="sb-fill" style="width:${bull}%;background:var(--green)"></div>
+      <div class="sb-fill" style="width:${neut}%;background:var(--b2)"></div>
+      <div class="sb-fill" style="width:${bear}%;background:var(--red)"></div>
+    </div>
+    <div class="sb-nums">
+      <span class="pos">看多 ${bull}%</span>
+      <span style="color:var(--t3)">中立 ${neut}%</span>
+      <span class="neg">看空 ${bear}%</span>
+    </div>
+  </div>`;
+
+  document.getElementById("page-overview").innerHTML = `
+    <div class="sl">🇺🇸 美股指數</div>
+    <div class="mgrid">${usCards}</div>
+    <div class="sl">🇹🇼 台股 & 匯率</div>
+    <div class="mgrid">${twCards}</div>
+    <div class="sl">📊 市場情緒指標</div>
+    <div class="metric-row">${vixHtml}${fgHtml}</div>
+    ${sbHtml}
+    <button class="rbtn" onclick="fetchData()" ${state.loading?"disabled":""}>
+      <span class="${state.loading?"spin":""}">↻</span> ${state.loading?"更新中...":"立即刷新"}
+    </button>`;
+}
+
+function renderWatchlist() {
+  const d = state.data;
+  const usStocks = (d?.us_stocks||[]).filter(s=>!s.error).map(s=>({...s,...(US_META[s.symbol]||{})}));
+  const twStocks = (d?.tw_stocks||[]).filter(s=>!s.error).map(s=>({...s,...(TW_META[s.symbol]||{})}));
+
+  function stockCard(s, prefix) {
+    const tags = (s.tags||[]).map(t=>`<span class="sc-tag ${tagCls(t)}">${t}</span>`).join("");
+    const hot = (s.raw||0) > 2;
+    return `<div class="scard${hot?" hot":""}">
+      <div>
+        <div class="sc-sym">${esc(s.symbol)}</div>
+        <div class="sc-name">${esc(s.name||s.symbol)}</div>
+        <div class="sc-tags">${tags}</div>
+      </div>
+      <div class="sc-right">
+        <div class="sc-price mono ${clr(s.raw)}">${prefix}${esc(s.price||"--")}</div>
+        <div class="sc-chg mono ${clr(s.raw)}">${(s.raw||0)>0?"+":""}${s.changePercent||"--"}%</div>
+        <div class="sc-note">${esc(s.reason||"")}</div>
+      </div>
+    </div>`;
+  }
+
+  const prevCards = PREV_SAMPLE.map(s=>`<div class="pcard">
+    <div>
+      <div class="pc-sym">${esc(s.symbol)}</div>
+      <div class="pc-name">${esc(s.name)}</div>
+      <div class="pc-outcome mono ${clr(s.raw)}">${s.raw>0?"✅":"⚠️"} ${esc(s.result)}</div>
+    </div>
+    <div class="pc-right">
+      <div class="pc-chg mono ${clr(s.raw)}">${esc(s.result)}</div>
+      <div class="pc-note">${esc(s.note)}</div>
+    </div>
+  </div>`).join("");
+
+  const usHtml = usStocks.length
+    ? usStocks.map(s=>stockCard(s,"$")).join("")
+    : Object.entries(US_META).map(([sym,m])=>`<div class="scard"><div><div class="sc-sym">${sym}</div><div class="sc-tags">${(m.tags||[]).map(t=>`<span class="sc-tag ${tagCls(t)}">${t}</span>`).join("")}</div></div><div class="sc-right"><div class="sc-price mono neu">--</div><div class="sc-note">${esc(m.reason)}</div></div></div>`).join("");
+
+  const twHtml = twStocks.length
+    ? twStocks.map(s=>stockCard(s,"")).join("")
+    : Object.entries(TW_META).map(([sym,m])=>`<div class="scard"><div><div class="sc-sym">${sym}</div><div class="sc-tags">${(m.tags||[]).map(t=>`<span class="sc-tag ${tagCls(t)}">${t}</span>`).join("")}</div></div><div class="sc-right"><div class="sc-price mono neu">--</div><div class="sc-note">${esc(m.reason)}</div></div></div>`).join("");
+
+  document.getElementById("page-watchlist").innerHTML = `
+    <div class="sl">⭐ 今日追蹤 — 美股</div>${usHtml}
+    <div class="sl" style="margin-top:8px">⭐ 今日追蹤 — 台股</div>${twHtml}
+    <div class="div"></div>
+    <div class="sl">📋 前一日追蹤結果</div>${prevCards}`;
+}
+
+function renderNews() {
+  const news = state.data?.news || [];
+  if (!news.length) {
+    document.getElementById("page-news").innerHTML = `<div class="sl">📰 即時財經新聞</div><div class="ncard"><div class="n-title">數據載入中，請稍候...</div></div>`;
+    return;
+  }
+  const cards = news.slice(0,20).map(n => `<div class="ncard">
+    <div class="n-meta">
+      <span class="n-src">${esc(n.source)}</span>
+      <span class="n-dot"></span>
+      <span class="n-time">${timeAgo(n.datetime)}</span>
+      ${n.impact==="high"?`<span class="n-impact">重大</span>`:""}
+      <span class="n-sent ${n.sentiment}">${n.sentiment==="bull"?"看多":n.sentiment==="bear"?"看空":"中立"}</span>
+    </div>
+    <div class="n-title">${esc(n.headline)}</div>
+    ${n.summary?`<div class="n-sum">${esc(n.summary)}</div>`:""}
+    ${n.url?`<a class="n-link" href="${esc(n.url)}" target="_blank" rel="noopener">📖 閱讀全文</a>`:""}
+  </div>`).join("");
+
+  document.getElementById("page-news").innerHTML = `
+    <div class="sl">📰 即時財經新聞</div>${cards}
+    <div style="padding:6px 16px 4px;font-size:10px;color:var(--t3);line-height:1.6">新聞來源：Finnhub。情緒分析為 AI 關鍵字判斷，僅供參考。</div>`;
+}
+
+// ═══════════════════════════════════════════
+//  AI Picks
+// ═══════════════════════════════════════════
+function buildPrompt(market) {
+  const d = state.data || {};
+  const mkts = d.markets || {};
+  const news = d.news || [];
+  const usStocks = (d.us_stocks||[]).filter(s=>!s.error);
+  const twStocks = (d.tw_stocks||[]).filter(s=>!s.error);
+  const vix = d.vix || {}, fg = d.fg || {};
+
+  const mktSummary = [
+    ...Object.values(mkts.us||{}).map(m=>`${m.name}: ${m.price} (${m.changePercent}%)`),
+    mkts.tw?.TWII ? `台股加權: ${mkts.tw.TWII.price} (${mkts.tw.TWII.changePercent}%)` : "",
+    mkts.fx?.USDTWD ? `USD/TWD: ${mkts.fx.USDTWD.price}` : "",
+  ].filter(Boolean).join("、");
+
+  const newsSummary = news.slice(0,10).map((n,i)=>
+    `${i+1}. [${n.sentiment==="bull"?"看多":n.sentiment==="bear"?"看空":"中立"}${n.impact==="high"?" ★高影響":""}] ${n.headline}`
+  ).join("\n");
+
+  const stockList = market==="US"
+    ? usStocks.map(s=>`${s.symbol}(${s.name||s.symbol}): $${s.price} ${s.changePercent>0?"+":""}${s.changePercent}%，產業:${s.industry||"--"}`).join("\n")
+    : twStocks.map(s=>`${s.symbol}(${s.name}): ${s.price} ${s.changePercent>0?"+":""}${s.changePercent}%，成交量:${Number(s.volume||0).toLocaleString()}`).join("\n");
+
+  const currency = market==="US" ? "美股" : "台股";
+  return `你是專業股市分析師，請針對以下即時數據，給出今日【${currency}】三類選股建議。
+
+=== 今日市場數據 ===
+大盤：${mktSummary||"載入中"}
+VIX：${vix.price||"--"} — ${vix.level?.label||""}
+恐懼貪婪指數：${fg.value!=null?fg.value+"（"+fg.label+"）":"--"}
+
+=== ${currency}個股數據 ===
+${stockList||"（數據載入中）"}
+
+=== 今日重點新聞（含情緒標記）===
+${newsSummary||"（新聞載入中）"}
+
+=== 輸出格式要求 ===
+請嚴格只輸出以下 JSON 格式，不要加任何前言或 markdown：
+{
+  "short": [
+    {"symbol":"代號","name":"名稱","reason":"短線進場理由（30字以內）","catalysts":["催化劑1","催化劑2"],"risk":"主要風險（15字以內）"},
+    {"symbol":"代號","name":"名稱","reason":"...","catalysts":[...],"risk":"..."},
+    {"symbol":"代號","name":"名稱","reason":"...","catalysts":[...],"risk":"..."}
+  ],
+  "long": [
+    {"symbol":"代號","name":"名稱","sector":"所屬類股","reason":"長線持有理由（30字以內）","thesis":"核心投資論點（40字以內）"},
+    {"symbol":"代號","name":"名稱","sector":"...","reason":"...","thesis":"..."},
+    {"symbol":"代號","name":"名稱","sector":"...","reason":"...","thesis":"..."}
+  ],
+  "exit": [
+    {"symbol":"代號","name":"名稱","reason":"獲利了結理由（30字以內）","signal":"觸發訊號（20字以內）"},
+    {"symbol":"代號","name":"名稱","reason":"...","signal":"..."},
+    {"symbol":"代號","name":"名稱","reason":"...","signal":"..."}
+  ],
+  "summary":"整體${currency}市場今日一句話研判（30字以內）"
+}
+選股限制：只能從以上個股數據中選取，每類別恰好3檔。`;
+}
+
+function pickSection(type, icon, title, badge, picks) {
+  if (!picks || !picks.length) return "";
+  const hdrCls = type+"-hdr", badgeCls = type+"-badge", numCls = type+"-num", chipCls = type+"-chip";
+  const rows = picks.map((p,i)=>`<div class="ai-pick">
+    <div class="pick-num ${numCls}">${i+1}</div>
+    <div>
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <span class="pick-sym">${esc(p.symbol)}</span>
+        ${p.name?`<span class="pick-name">${esc(p.name)}</span>`:""}
+        ${p.sector?`<span style="font-size:10px;color:var(--t3)">${esc(p.sector)}</span>`:""}
+      </div>
+      <div class="pick-reason">${esc(p.reason||"")}</div>
+      ${p.thesis?`<div class="pick-sub">📌 ${esc(p.thesis)}</div>`:""}
+      ${p.signal?`<div class="pick-sub">📡 訊號：${esc(p.signal)}</div>`:""}
+      <div class="pick-chips">
+        ${(p.catalysts||[]).map(c=>`<span class="pick-chip ${chipCls}">${esc(c)}</span>`).join("")}
+        ${p.risk?`<span class="pick-risk">⚠️ ${esc(p.risk)}</span>`:""}
+      </div>
+    </div>
+  </div>`).join("");
+  return `<div class="ai-section">
+    <div class="ai-sec-hdr ${hdrCls}">
+      <span class="ai-sec-icon">${icon}</span>
+      <span class="ai-sec-title">${title}</span>
+      <span class="ai-sec-badge ${badgeCls}">${badge}</span>
+    </div>
+    <div class="ai-picks">${rows}</div>
+  </div>`;
+}
+
+async function fetchAI(market) {
+  const isUS = market === "US";
+  if (isUS ? state.aiDoneUS : state.aiDoneTW) return;
+  if (isUS) state.aiLoadUS = true; else state.aiLoadTW = true;
+  renderAIPage();
+
+  try {
+    const prompt = buildPrompt(market);
+    const res = await fetch(ANTHROPIC_API, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        model:"claude-sonnet-4-20250514",
+        max_tokens:1000,
+        system:"你是專業股市分析師。只輸出合法 JSON，不要加任何說明文字或 markdown。",
+        messages:[{role:"user",content:prompt}]
+      })
+    });
+    const json = await res.json();
+    const raw = json.content?.[0]?.text || "";
+    const clean = raw.replace(/```json|```/g,"").trim();
+    const parsed = JSON.parse(clean);
+    if (isUS) { state.aiUS = parsed; state.aiDoneUS = true; }
+    else       { state.aiTW = parsed; state.aiDoneTW = true; }
+  } catch(e) {
+    console.error("AI error:", e);
+  } finally {
+    if (isUS) state.aiLoadUS = false; else state.aiLoadTW = false;
+    renderAIPage();
+  }
+}
+
+function renderAIPage() {
+  const mkt = state.mkt;
+  const isUS = mkt === "US";
+  const ai = isUS ? state.aiUS : state.aiTW;
+  const loading = isUS ? state.aiLoadUS : state.aiLoadTW;
+
+  const toggle = `<div class="mkt-toggle">
+    <button class="mkt-btn ${mkt==="US"?"on-us":""}" onclick="setMkt('US')">🇺🇸 美股選股</button>
+    <button class="mkt-btn ${mkt==="TW"?"on-tw":""}" onclick="setMkt('TW')">🇹🇼 台股選股</button>
+  </div>`;
+
+  let body = "";
+  if (loading && !ai) {
+    body = `<div class="ai-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span> AI 正在分析即時市場數據...</div>`;
+  } else if (ai) {
+    const sum = ai.summary ? `<div class="ai-sum">📌 ${esc(ai.summary)}</div>` : "";
+    body = sum +
+      pickSection("short","⚡","短線操作潛力個股","短線",ai.short) +
+      pickSection("long","🌱","建議長線持有類股","長線",ai.long) +
+      pickSection("exit","💰","建議考慮獲利了結","獲利了結",ai.exit);
+  }
+
+  const regenBtn = `<button class="rbtn" onclick="regenAI()" ${loading?"disabled":""}>
+    <span class="${loading?"spin":""}">↻</span> ${loading?"分析中...":"重新生成 AI 建議"}
+  </button>`;
+
+  document.getElementById("page-ai").innerHTML =
+    toggle + body + regenBtn +
+    `<div class="ai-disc">⚠️ AI 選股建議僅供參考，不構成投資建議。投資有風險，請自行評估並設好停損。</div>`;
+}
+
+function renderAI() {
+  renderAIPage();
+  const mkt = state.mkt;
+  const isUS = mkt === "US";
+  if (isUS && !state.aiDoneUS && !state.aiLoadUS) fetchAI("US");
+  if (!isUS && !state.aiDoneTW && !state.aiLoadTW) fetchAI("TW");
+}
+
+window.setMkt = function(mkt) {
+  state.mkt = mkt;
+  renderAI();
+};
+window.regenAI = function() {
+  const isUS = state.mkt === "US";
+  if (isUS) { state.aiDoneUS = false; state.aiUS = null; }
+  else       { state.aiDoneTW = false; state.aiTW = null; }
+  fetchAI(state.mkt);
+};
+
+// ═══════════════════════════════════════════
+//  Render all
+// ═══════════════════════════════════════════
+function renderAll() {
+  renderOverview();
+  renderWatchlist();
+  renderNews();
+  if (state.tab === "ai") renderAIPage();
+}
+
+// ═══════════════════════════════════════════
+//  Init
+// ═══════════════════════════════════════════
+renderSkeletons();
+renderAll();
+fetchData();
+</script>
+</body>
+</html>
