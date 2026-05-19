@@ -557,37 +557,6 @@ function marketContext() {
   return { summary: lines.join(" | "), usList, twList };
 }
 
-function buildSystemPrompt() {
-  return `你是頂尖專業股市分析師，擁有即時搜尋能力。
-你的任務：主動使用 web_search 工具搜尋最新財經資訊，然後給出今日選股建議。
-
-搜尋策略（必須執行）：
-1. 搜尋「台股 今日 強勢股 熱門股」
-2. 搜尋「美股 今日 推薦 買入」
-3. 搜尋「台股 技術面 突破 2025」
-4. 搜尋用戶指定市場的最新財經新聞
-
-分析完畢後，嚴格只輸出以下 JSON 格式，不含任何前言或 markdown：
-{
-  "searched_topics": ["你實際搜尋的關鍵字1","關鍵字2","關鍵字3"],
-  "market_summary": "今日大盤一句話研判（40字以內）",
-  "buy_short": [
-    {"symbol":"代號","name":"名稱","market":"TW或US","price_target":"目標價或百分比","reason":"短線買進理由（40字）","catalysts":["催化劑1","催化劑2"],"stop_loss":"建議停損點","news_ref":"參考新聞標題"},
-    ... 共5-8支
-  ],
-  "buy_long": [
-    {"symbol":"代號","name":"名稱","market":"TW或US","sector":"產業","reason":"長線買進理由（40字）","thesis":"核心論點（50字）","time_horizon":"持有期間建議"},
-    ... 共5-8支
-  ],
-  "sell": [
-    {"symbol":"代號","name":"名稱","market":"TW或US","reason":"建議賣出理由（40字）","signal":"觸發訊號（25字）","risk_level":"高/中/低"},
-    ... 共5-8支
-  ]
-}
-
-重要：選股不限於固定清單，可以推薦市場上任何值得關注的股票。`;
-}
-
 function buildUserPrompt(market) {
   const ctx = marketContext();
   const today = new Date().toLocaleDateString("zh-TW", {year:"numeric",month:"long",day:"numeric",weekday:"long"});
@@ -595,16 +564,42 @@ function buildUserPrompt(market) {
   return `今天是 ${today}。
 
 當前大盤數據：${ctx.summary}
-美股個股：${ctx.usList || "載入中"}
-台股個股：${ctx.twList || "載入中"}
+美股個股：${ctx.usList || "暫無"}
+台股個股：${ctx.twList || "暫無"}
 
-請立即使用 web_search 搜尋以下內容後再回答：
+請搜尋以下資訊並給出選股建議：
 1. 今日${mktName}強勢股、熱門股、法人買超
-2. 近一週${mktName}重大財經新聞
-3. 今日${mktName}技術面突破個股
-4. 建議賣出或需注意的${mktName}個股
+2. 近一週${mktName}重大財經新聞與影響
+3. 今日${mktName}技術面突破或值得關注個股
+4. 建議賣出或需要警示的${mktName}個股
 
-搜尋完畢後，給出針對【${mktName}】的完整買進（短線5-8支、長線5-8支）與賣出（5-8支）建議。`;
+請給出針對【${mktName}】的完整選股建議，嚴格只輸出以下 JSON 格式，不含任何前言或 markdown：
+{
+  "searched_topics": ["搜尋關鍵字1","搜尋關鍵字2","搜尋關鍵字3"],
+  "market_summary": "今日大盤一句話研判（40字以內）",
+  "buy_short": [
+    {"symbol":"代號","name":"名稱","market":"TW或US","price_target":"目標價","reason":"短線買進理由（40字）","catalysts":["催化劑1","催化劑2"],"stop_loss":"停損點","news_ref":"參考新聞"},
+    {"symbol":"...","name":"...","market":"...","price_target":"...","reason":"...","catalysts":[...],"stop_loss":"...","news_ref":"..."},
+    {"symbol":"...","name":"...","market":"...","price_target":"...","reason":"...","catalysts":[...],"stop_loss":"...","news_ref":"..."},
+    {"symbol":"...","name":"...","market":"...","price_target":"...","reason":"...","catalysts":[...],"stop_loss":"...","news_ref":"..."},
+    {"symbol":"...","name":"...","market":"...","price_target":"...","reason":"...","catalysts":[...],"stop_loss":"...","news_ref":"..."}
+  ],
+  "buy_long": [
+    {"symbol":"代號","name":"名稱","market":"TW或US","sector":"產業","reason":"長線買進理由（40字）","thesis":"核心論點（50字）","time_horizon":"持有期間"},
+    {"symbol":"...","name":"...","market":"...","sector":"...","reason":"...","thesis":"...","time_horizon":"..."},
+    {"symbol":"...","name":"...","market":"...","sector":"...","reason":"...","thesis":"...","time_horizon":"..."},
+    {"symbol":"...","name":"...","market":"...","sector":"...","reason":"...","thesis":"...","time_horizon":"..."},
+    {"symbol":"...","name":"...","market":"...","sector":"...","reason":"...","thesis":"...","time_horizon":"..."}
+  ],
+  "sell": [
+    {"symbol":"代號","name":"名稱","market":"TW或US","reason":"賣出理由（40字）","signal":"觸發訊號（25字）","risk_level":"高/中/低"},
+    {"symbol":"...","name":"...","market":"...","reason":"...","signal":"...","risk_level":"..."},
+    {"symbol":"...","name":"...","market":"...","reason":"...","signal":"...","risk_level":"..."},
+    {"symbol":"...","name":"...","market":"...","reason":"...","signal":"...","risk_level":"..."},
+    {"symbol":"...","name":"...","market":"...","reason":"...","signal":"...","risk_level":"..."}
+  ]
+}
+選股可以是市場上任何值得關注的股票，不限於固定清單。每類別至少5支。`;
 }
 
 // Render a pick card
@@ -651,37 +646,20 @@ function pickSection2(type, icon, title, badge, picks) {
 }
 
 async function fetchAI(market) {
-  const isUS = market === "US";
   const key = market;
   if (state.aiDone[key]) return;
   state.aiLoad[key] = true;
   renderAIPage();
 
   try {
-    const res = await fetch(ANTHROPIC_API, {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model:"claude-sonnet-4-20250514",
-        max_tokens:4000,
-        system: buildSystemPrompt(),
-        tools:[{ type:"web_search_20250305", name:"web_search" }],
-        messages:[{role:"user", content: buildUserPrompt(market)}]
-      })
-    });
-    const json = await res.json();
-
-    // Extract text from content blocks (may include tool_use blocks)
-    let raw = "";
-    if (Array.isArray(json.content)) {
-      for (const block of json.content) {
-        if (block.type === "text") raw += block.text;
-      }
-    }
+    // Route through GAS proxy to avoid CORS and enable web_search tool
+    const json = await fetchJSONP(GAS_URL + "?action=ai_picks&market=" + encodeURIComponent(market)
+      + "&prompt=" + encodeURIComponent(buildUserPrompt(market)));
+    if (json.error) throw new Error(json.error);
+    const raw = json.result || "";
     const clean = raw.replace(/```json|```/g,"").trim();
-    // Find JSON object in response
     const match = clean.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("No JSON in response");
+    if (!match) throw new Error("AI 回傳格式錯誤，請重試");
     const parsed = JSON.parse(match[0]);
     state.aiData[key] = parsed;
     state.aiDone[key] = true;
