@@ -108,7 +108,7 @@ body{background:var(--bg);color:var(--t1);font-family:'Outfit',sans-serif;overfl
 .n-link{display:inline-flex;align-items:center;gap:4px;margin-top:7px;font-size:10px;font-weight:600;color:var(--blue);text-decoration:none;padding:4px 9px;border-radius:100px;border:1px solid rgba(79,142,247,.25);}
 
 /* AI picks */
-.mkt-toggle{display:flex;gap:5px;padding:0 16px 12px;}
+.mkt-toggle{display:flex;gap:5px;padding:0 16px 12px;} .mkt-btn.on-both{background:rgba(0,229,160,.12);border-color:rgba(0,229,160,.4);color:var(--green);}
 .mkt-btn{flex:1;padding:9px;border-radius:var(--r2);border:1.5px solid var(--b1);background:transparent;color:var(--t3);font-family:'Outfit',sans-serif;font-size:12px;font-weight:700;cursor:pointer;transition:all .18s;}
 .mkt-btn.on-us{background:rgba(79,142,247,.12);border-color:rgba(79,142,247,.4);color:var(--blue);}
 .mkt-btn.on-tw{background:rgba(167,139,250,.12);border-color:rgba(167,139,250,.4);color:var(--purple);}
@@ -254,12 +254,13 @@ const PREV_SAMPLE = [
 // ═══════════════════════════════════════════
 let state = {
   tab: "overview",
-  mkt: "US",
+  mkt: "TW",
   data: null,
   loading: false,
-  aiUS: null, aiTW: null,
-  aiLoadUS: false, aiLoadTW: false,
-  aiDoneUS: false, aiDoneTW: false,
+  aiData: { US: null, TW: null, BOTH: null },
+  aiLoad: { US: false, TW: false, BOTH: false },
+  aiDone: { US: false, TW: false, BOTH: false },
+  aiErr:  { US: "", TW: "", BOTH: "" },
 };
 
 // ═══════════════════════════════════════════
@@ -534,91 +535,115 @@ function renderNews() {
 }
 
 // ═══════════════════════════════════════════
-//  AI Picks
+//  AI Picks — Web Search powered
 // ═══════════════════════════════════════════
-function buildPrompt(market) {
+
+// Build market context from GAS data
+function marketContext() {
   const d = state.data || {};
   const mkts = d.markets || {};
-  const news = d.news || [];
+  const vix = d.vix || {}, fg = d.fg || {};
   const usStocks = (d.us_stocks||[]).filter(s=>!s.error);
   const twStocks = (d.tw_stocks||[]).filter(s=>!s.error);
-  const vix = d.vix || {}, fg = d.fg || {};
+  const lines = [
+    ...Object.values(mkts.us||{}).map(m=>`${m.name} ${m.price} (${m.changePercent>0?"+":""}${m.changePercent}%)`),
+    mkts.tw?.TWII ? `台股加權 ${mkts.tw.TWII.price} (${mkts.tw.TWII.changePercent}%)` : "",
+    mkts.fx?.USDTWD ? `USD/TWD ${mkts.fx.USDTWD.price}` : "",
+    vix.price ? `VIX ${vix.price} — ${vix.level?.label||""}` : "",
+    fg.value!=null ? `恐懼貪婪指數 ${fg.value}（${fg.label}）` : "",
+  ].filter(Boolean);
+  const usList = usStocks.map(s=>`${s.symbol}(${s.name||s.symbol}) $${s.price} ${s.changePercent>0?"+":""}${s.changePercent}%`).join(", ");
+  const twList = twStocks.map(s=>`${s.symbol}(${s.name}) ${s.price} ${s.changePercent>0?"+":""}${s.changePercent}%`).join(", ");
+  return { summary: lines.join(" | "), usList, twList };
+}
 
-  const mktSummary = [
-    ...Object.values(mkts.us||{}).map(m=>`${m.name}: ${m.price} (${m.changePercent}%)`),
-    mkts.tw?.TWII ? `台股加權: ${mkts.tw.TWII.price} (${mkts.tw.TWII.changePercent}%)` : "",
-    mkts.fx?.USDTWD ? `USD/TWD: ${mkts.fx.USDTWD.price}` : "",
-  ].filter(Boolean).join("、");
+function buildSystemPrompt() {
+  return `你是頂尖專業股市分析師，擁有即時搜尋能力。
+你的任務：主動使用 web_search 工具搜尋最新財經資訊，然後給出今日選股建議。
 
-  const newsSummary = news.slice(0,10).map((n,i)=>
-    `${i+1}. [${n.sentiment==="bull"?"看多":n.sentiment==="bear"?"看空":"中立"}${n.impact==="high"?" ★高影響":""}] ${n.headline}`
-  ).join("\n");
+搜尋策略（必須執行）：
+1. 搜尋「台股 今日 強勢股 熱門股」
+2. 搜尋「美股 今日 推薦 買入」
+3. 搜尋「台股 技術面 突破 2025」
+4. 搜尋用戶指定市場的最新財經新聞
 
-  const stockList = market==="US"
-    ? usStocks.map(s=>`${s.symbol}(${s.name||s.symbol}): $${s.price} ${s.changePercent>0?"+":""}${s.changePercent}%，產業:${s.industry||"--"}`).join("\n")
-    : twStocks.map(s=>`${s.symbol}(${s.name}): ${s.price} ${s.changePercent>0?"+":""}${s.changePercent}%，成交量:${Number(s.volume||0).toLocaleString()}`).join("\n");
-
-  const currency = market==="US" ? "美股" : "台股";
-  return `你是專業股市分析師，請針對以下即時數據，給出今日【${currency}】三類選股建議。
-
-=== 今日市場數據 ===
-大盤：${mktSummary||"載入中"}
-VIX：${vix.price||"--"} — ${vix.level?.label||""}
-恐懼貪婪指數：${fg.value!=null?fg.value+"（"+fg.label+"）":"--"}
-
-=== ${currency}個股數據 ===
-${stockList||"（數據載入中）"}
-
-=== 今日重點新聞（含情緒標記）===
-${newsSummary||"（新聞載入中）"}
-
-=== 輸出格式要求 ===
-請嚴格只輸出以下 JSON 格式，不要加任何前言或 markdown：
+分析完畢後，嚴格只輸出以下 JSON 格式，不含任何前言或 markdown：
 {
-  "short": [
-    {"symbol":"代號","name":"名稱","reason":"短線進場理由（30字以內）","catalysts":["催化劑1","催化劑2"],"risk":"主要風險（15字以內）"},
-    {"symbol":"代號","name":"名稱","reason":"...","catalysts":[...],"risk":"..."},
-    {"symbol":"代號","name":"名稱","reason":"...","catalysts":[...],"risk":"..."}
+  "searched_topics": ["你實際搜尋的關鍵字1","關鍵字2","關鍵字3"],
+  "market_summary": "今日大盤一句話研判（40字以內）",
+  "buy_short": [
+    {"symbol":"代號","name":"名稱","market":"TW或US","price_target":"目標價或百分比","reason":"短線買進理由（40字）","catalysts":["催化劑1","催化劑2"],"stop_loss":"建議停損點","news_ref":"參考新聞標題"},
+    ... 共5-8支
   ],
-  "long": [
-    {"symbol":"代號","name":"名稱","sector":"所屬類股","reason":"長線持有理由（30字以內）","thesis":"核心投資論點（40字以內）"},
-    {"symbol":"代號","name":"名稱","sector":"...","reason":"...","thesis":"..."},
-    {"symbol":"代號","name":"名稱","sector":"...","reason":"...","thesis":"..."}
+  "buy_long": [
+    {"symbol":"代號","name":"名稱","market":"TW或US","sector":"產業","reason":"長線買進理由（40字）","thesis":"核心論點（50字）","time_horizon":"持有期間建議"},
+    ... 共5-8支
   ],
-  "exit": [
-    {"symbol":"代號","name":"名稱","reason":"獲利了結理由（30字以內）","signal":"觸發訊號（20字以內）"},
-    {"symbol":"代號","name":"名稱","reason":"...","signal":"..."},
-    {"symbol":"代號","name":"名稱","reason":"...","signal":"..."}
-  ],
-  "summary":"整體${currency}市場今日一句話研判（30字以內）"
-}
-選股限制：只能從以上個股數據中選取，每類別恰好3檔。`;
+  "sell": [
+    {"symbol":"代號","name":"名稱","market":"TW或US","reason":"建議賣出理由（40字）","signal":"觸發訊號（25字）","risk_level":"高/中/低"},
+    ... 共5-8支
+  ]
 }
 
-function pickSection(type, icon, title, badge, picks) {
-  if (!picks || !picks.length) return "";
-  const hdrCls = type+"-hdr", badgeCls = type+"-badge", numCls = type+"-num", chipCls = type+"-chip";
-  const rows = picks.map((p,i)=>`<div class="ai-pick">
-    <div class="pick-num ${numCls}">${i+1}</div>
-    <div>
-      <div style="display:flex;align-items:baseline;gap:6px">
+重要：選股不限於固定清單，可以推薦市場上任何值得關注的股票。`;
+}
+
+function buildUserPrompt(market) {
+  const ctx = marketContext();
+  const today = new Date().toLocaleDateString("zh-TW", {year:"numeric",month:"long",day:"numeric",weekday:"long"});
+  const mktName = market === "BOTH" ? "台股與美股" : market === "TW" ? "台股" : "美股";
+  return `今天是 ${today}。
+
+當前大盤數據：${ctx.summary}
+美股個股：${ctx.usList || "載入中"}
+台股個股：${ctx.twList || "載入中"}
+
+請立即使用 web_search 搜尋以下內容後再回答：
+1. 今日${mktName}強勢股、熱門股、法人買超
+2. 近一週${mktName}重大財經新聞
+3. 今日${mktName}技術面突破個股
+4. 建議賣出或需注意的${mktName}個股
+
+搜尋完畢後，給出針對【${mktName}】的完整買進（短線5-8支、長線5-8支）與賣出（5-8支）建議。`;
+}
+
+// Render a pick card
+function pickCard(p, type) {
+  const numCls = type+"-num", chipCls = type+"-chip";
+  const mktBadge = p.market ? `<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:${p.market==="TW"?"rgba(167,139,250,.15)":"rgba(79,142,247,.15)"};color:${p.market==="TW"?"var(--purple)":"var(--blue)"};font-weight:700">${p.market}</span>` : "";
+  return `<div class="ai-pick">
+    <div class="pick-num ${numCls}" style="font-size:9px">★</div>
+    <div style="flex:1">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         <span class="pick-sym">${esc(p.symbol)}</span>
-        ${p.name?`<span class="pick-name">${esc(p.name)}</span>`:""}
-        ${p.sector?`<span style="font-size:10px;color:var(--t3)">${esc(p.sector)}</span>`:""}
+        <span class="pick-name">${esc(p.name||"")}</span>
+        ${mktBadge}
+        ${p.sector?`<span style="font-size:9px;color:var(--t3)">${esc(p.sector)}</span>`:""}
       </div>
-      <div class="pick-reason">${esc(p.reason||"")}</div>
-      ${p.thesis?`<div class="pick-sub">📌 ${esc(p.thesis)}</div>`:""}
-      ${p.signal?`<div class="pick-sub">📡 訊號：${esc(p.signal)}</div>`:""}
-      <div class="pick-chips">
+      <div class="pick-reason" style="margin-top:5px">${esc(p.reason||"")}</div>
+      ${p.thesis?`<div class="pick-sub" style="margin-top:4px">📌 ${esc(p.thesis)}</div>`:""}
+      ${p.signal?`<div class="pick-sub" style="margin-top:4px">📡 ${esc(p.signal)}</div>`:""}
+      ${p.news_ref?`<div style="font-size:10px;color:var(--t3);margin-top:4px;font-style:italic">📰 ${esc(p.news_ref)}</div>`:""}
+      <div class="pick-chips" style="margin-top:6px">
         ${(p.catalysts||[]).map(c=>`<span class="pick-chip ${chipCls}">${esc(c)}</span>`).join("")}
-        ${p.risk?`<span class="pick-risk">⚠️ ${esc(p.risk)}</span>`:""}
+        ${p.price_target?`<span style="font-size:9px;padding:2px 7px;border-radius:100px;background:rgba(0,229,160,.08);color:var(--green);font-weight:700">目標 ${esc(p.price_target)}</span>`:""}
+        ${p.time_horizon?`<span style="font-size:9px;padding:2px 7px;border-radius:100px;background:rgba(255,255,255,.05);color:var(--t2)">${esc(p.time_horizon)}</span>`:""}
+        ${p.stop_loss?`<span style="font-size:9px;color:var(--red)">停損 ${esc(p.stop_loss)}</span>`:""}
+        ${p.risk_level?`<span style="font-size:9px;padding:2px 6px;border-radius:3px;background:${p.risk_level==="高"?"rgba(242,75,107,.15)":p.risk_level==="中"?"rgba(245,185,63,.12)":"rgba(0,229,160,.08)"};color:${p.risk_level==="高"?"var(--red)":p.risk_level==="中"?"var(--gold)":"var(--green)"}">風險${esc(p.risk_level)}</span>`:""}
       </div>
     </div>
-  </div>`).join("");
-  return `<div class="ai-section">
+  </div>`;
+}
+
+function pickSection2(type, icon, title, badge, picks) {
+  if (!picks || !picks.length) return "";
+  const hdrCls=type+"-hdr", badgeCls=type+"-badge";
+  const rows = picks.map(p => pickCard(p, type)).join("");
+  return `<div class="ai-section" style="margin-bottom:10px">
     <div class="ai-sec-hdr ${hdrCls}">
       <span class="ai-sec-icon">${icon}</span>
       <span class="ai-sec-title">${title}</span>
+      <span style="font-size:10px;color:var(--t3);margin-left:6px">${picks.length}支</span>
       <span class="ai-sec-badge ${badgeCls}">${badge}</span>
     </div>
     <div class="ai-picks">${rows}</div>
@@ -627,73 +652,97 @@ function pickSection(type, icon, title, badge, picks) {
 
 async function fetchAI(market) {
   const isUS = market === "US";
-  if (isUS ? state.aiDoneUS : state.aiDoneTW) return;
-  if (isUS) state.aiLoadUS = true; else state.aiLoadTW = true;
+  const key = market;
+  if (state.aiDone[key]) return;
+  state.aiLoad[key] = true;
   renderAIPage();
 
   try {
-    const prompt = buildPrompt(market);
     const res = await fetch(ANTHROPIC_API, {
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({
         model:"claude-sonnet-4-20250514",
-        max_tokens:1000,
-        system:"你是專業股市分析師。只輸出合法 JSON，不要加任何說明文字或 markdown。",
-        messages:[{role:"user",content:prompt}]
+        max_tokens:4000,
+        system: buildSystemPrompt(),
+        tools:[{ type:"web_search_20250305", name:"web_search" }],
+        messages:[{role:"user", content: buildUserPrompt(market)}]
       })
     });
     const json = await res.json();
-    const raw = json.content?.[0]?.text || "";
+
+    // Extract text from content blocks (may include tool_use blocks)
+    let raw = "";
+    if (Array.isArray(json.content)) {
+      for (const block of json.content) {
+        if (block.type === "text") raw += block.text;
+      }
+    }
     const clean = raw.replace(/```json|```/g,"").trim();
-    const parsed = JSON.parse(clean);
-    if (isUS) { state.aiUS = parsed; state.aiDoneUS = true; }
-    else       { state.aiTW = parsed; state.aiDoneTW = true; }
+    // Find JSON object in response
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("No JSON in response");
+    const parsed = JSON.parse(match[0]);
+    state.aiData[key] = parsed;
+    state.aiDone[key] = true;
   } catch(e) {
+    state.aiErr[key] = "分析失敗：" + e.message;
     console.error("AI error:", e);
   } finally {
-    if (isUS) state.aiLoadUS = false; else state.aiLoadTW = false;
+    state.aiLoad[key] = false;
     renderAIPage();
   }
 }
 
 function renderAIPage() {
   const mkt = state.mkt;
-  const isUS = mkt === "US";
-  const ai = isUS ? state.aiUS : state.aiTW;
-  const loading = isUS ? state.aiLoadUS : state.aiLoadTW;
+  const ai = state.aiData[mkt];
+  const loading = state.aiLoad[mkt];
+  const err = state.aiErr[mkt];
 
   const toggle = `<div class="mkt-toggle">
-    <button class="mkt-btn ${mkt==="US"?"on-us":""}" onclick="setMkt('US')">🇺🇸 美股選股</button>
-    <button class="mkt-btn ${mkt==="TW"?"on-tw":""}" onclick="setMkt('TW')">🇹🇼 台股選股</button>
+    <button class="mkt-btn ${mkt==="US"?"on-us":""}" onclick="setMkt('US')">🇺🇸 美股</button>
+    <button class="mkt-btn ${mkt==="TW"?"on-tw":""}" onclick="setMkt('TW')">🇹🇼 台股</button>
+    <button class="mkt-btn ${mkt==="BOTH"?"on-tw":""}" onclick="setMkt('BOTH')" style="flex:1.2">🌏 雙市場</button>
   </div>`;
 
   let body = "";
   if (loading && !ai) {
-    body = `<div class="ai-loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span> AI 正在分析即時市場數據...</div>`;
+    body = `<div class="ai-loading" style="flex-direction:column;gap:12px;padding:24px 16px">
+      <div style="display:flex;gap:6px"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <div style="font-size:12px;color:var(--t3);text-align:center;line-height:1.6">
+        AI 正在搜尋最新財經新聞<br>分析今日市場動態...<br>
+        <span style="font-size:10px;opacity:.6">（約需 15-30 秒）</span>
+      </div>
+    </div>`;
+  } else if (err && !ai) {
+    body = `<div class="err-box">${esc(err)}</div>`;
   } else if (ai) {
-    const sum = ai.summary ? `<div class="ai-sum">📌 ${esc(ai.summary)}</div>` : "";
-    body = sum +
-      pickSection("short","⚡","短線操作潛力個股","短線",ai.short) +
-      pickSection("long","🌱","建議長線持有類股","長線",ai.long) +
-      pickSection("exit","💰","建議考慮獲利了結","獲利了結",ai.exit);
+    const searched = ai.searched_topics?.length
+      ? `<div style="margin:0 16px 10px;padding:8px 12px;background:rgba(79,142,247,.06);border:1px solid rgba(79,142,247,.15);border-radius:var(--r2);font-size:10px;color:var(--t2);line-height:1.6">
+          🔍 已搜尋：${ai.searched_topics.map(t=>`<span style="background:rgba(255,255,255,.06);padding:1px 5px;border-radius:3px;margin:1px">${esc(t)}</span>`).join(" ")}
+         </div>` : "";
+    const sum = ai.market_summary
+      ? `<div class="ai-sum">📌 ${esc(ai.market_summary)}</div>` : "";
+    body = searched + sum +
+      pickSection2("short","⚡","今日短線買進建議","短線買進",ai.buy_short) +
+      pickSection2("long","🌱","長線持有買進建議","長線買進",ai.buy_long) +
+      pickSection2("exit","💰","今日建議賣出股票","賣出",ai.sell);
   }
 
   const regenBtn = `<button class="rbtn" onclick="regenAI()" ${loading?"disabled":""}>
-    <span class="${loading?"spin":""}">↻</span> ${loading?"分析中...":"重新生成 AI 建議"}
+    <span class="${loading?"spin":""}">↻</span> ${loading?"搜尋分析中...":"重新搜尋 & 分析"}
   </button>`;
 
   document.getElementById("page-ai").innerHTML =
     toggle + body + regenBtn +
-    `<div class="ai-disc">⚠️ AI 選股建議僅供參考，不構成投資建議。投資有風險，請自行評估並設好停損。</div>`;
+    `<div class="ai-disc">⚠️ AI 根據即時網路搜尋給出建議，僅供參考，不構成投資建議。投資有風險，請自行評估並設好停損。</div>`;
 }
 
 function renderAI() {
   renderAIPage();
   const mkt = state.mkt;
-  const isUS = mkt === "US";
-  if (isUS && !state.aiDoneUS && !state.aiLoadUS) fetchAI("US");
-  if (!isUS && !state.aiDoneTW && !state.aiLoadTW) fetchAI("TW");
+  if (!state.aiDone[mkt] && !state.aiLoad[mkt]) fetchAI(mkt);
 }
 
 window.setMkt = function(mkt) {
@@ -701,10 +750,11 @@ window.setMkt = function(mkt) {
   renderAI();
 };
 window.regenAI = function() {
-  const isUS = state.mkt === "US";
-  if (isUS) { state.aiDoneUS = false; state.aiUS = null; }
-  else       { state.aiDoneTW = false; state.aiTW = null; }
-  fetchAI(state.mkt);
+  const mkt = state.mkt;
+  state.aiDone[mkt] = false;
+  state.aiData[mkt] = null;
+  state.aiErr[mkt] = "";
+  fetchAI(mkt);
 };
 
 // ═══════════════════════════════════════════
